@@ -1,0 +1,261 @@
+---
+title: "Credit Risk Modeling"
+author: "Dimensionless"
+date: "October 23, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#### Importing the data
+You can download the data from [here](http://az754797.vo.msecnd.net/competition/lex/data/LoansTrainingSetV2.csv)
+```{r Importing}
+# We will not read the strings as factors, instead we will convert them one by one if required
+loan_data<-read.csv("C://Users/himanshu arora/Documents/Data Science/Case Study/Microsoft Credit Risk Modeling/LoansTrainingSetV2.csv",stringsAsFactors = FALSE)
+```
+#### Remove Duplicate Rows
+The Loan.ID is a unique identifier, so we will remove any duplicate values of that
+```{r Unique}
+loan_unique<-loan_data[row.names(as.data.frame(unique(loan_data$Loan.ID))),]
+```
+#### Cleaning the data
+We will take one column at a time, and clean it, convert it etc. as per our requirement  
+Column 1 :- Loan.ID
+```{r Loan.ID}
+class(loan_unique$Loan.ID)
+# It is a character vector. and we have removed the duplicate values
+```
+Column 2 :- Customer ID 
+```{r Customer.ID}
+class(loan_unique$Customer.ID)
+# It is a character vector, and doesn't requires any cleaning
+```
+Column 3 :- Loan.Status
+```{r Loan.Status}
+# It is our Dependent Variable
+class(loan_unique$Loan.Status)
+# It is character vector, and needs to be converted to factor
+loan_unique$Loan.Status<-as.factor(loan_unique$Loan.Status)
+levels(loan_unique$Loan.Status)
+table(loan_unique$Loan.Status)
+# It has two levels, "Charged Off" and "Fully Paid". "Charged Off" are our defaulters.
+```
+Column 4 :- Current.Loan.Amount 
+```{r Current.Loan.Amount}
+class(loan_unique$Current.Loan.Amount)
+# It is a numeric vector.
+summary(loan_unique$Current.Loan.Amount)
+# There are no missing values. But there are outliers.There is a big difference between mean and median
+library(ggplot2)
+qplot(loan_unique$Current.Loan.Amount,geom="histogram")
+# Histogram suggests that we have outliers.
+# Seperating them using IQR methodology.
+outlier<-boxplot.stats(loan_unique$Current.Loan.Amount)
+length(outlier$out)
+# There are 12783 values that are outliers.
+# Replacing them with NA's
+loan_unique$Current.Loan.Amount[loan_unique$Current.Loan.Amount>=min(outlier$out)]<-NA
+summary(loan_unique$Current.Loan.Amount)
+qplot(loan_unique$Current.Loan.Amount,geom="histogram")
+```
+Column 5 :- Term
+```{r Term}
+class(loan_unique$Term)
+# It is a character vector. Needs to be converted to factor
+loan_unique$Term<-as.factor(loan_unique$Term)
+levels(loan_unique$Term)
+table(loan_unique$Term)
+# It has two levels, "Long Term" and "Short Term". Cleaning not required
+```
+Column 6:- Credit.Score
+```{r Credit.Score}
+class(loan_unique$Credit.Score)
+# It is a numeric vector.
+summary(loan_unique$Credit.Score)
+# It has NA's and the maximum value is 7510. But it should be between 0-800.
+qplot(loan_unique$Credit.Score)
+# We will replace all the values greater than 800 by NA's
+loan_unique$Credit.Score[loan_unique$Credit.Score>800]<-NA
+summary(loan_unique$Credit.Score)
+qplot(loan_unique$Credit.Score)
+#Missing value treatment, replacing missing values by median
+loan_unique$Credit.Score[is.na(loan_unique$Credit.Score)==TRUE]<-median(loan_unique$Credit.Score,na.rm = T)
+```
+Column 7:- Years.in.current.job
+```{r Years.in.current.job}
+class(loan_unique$Years.in.current.job)
+# It is a character vector.
+table(loan_unique$Years.in.current.job)
+# Needs to be converted to factor and "n/a" needs to be replaced to NA.
+# Replacing "n/a"
+library(stringr)
+loan_unique$Years.in.current.job<-str_replace_all(loan_unique$Years.in.current.job,pattern = "n/a",NA)
+table(loan_unique$Years.in.current.job)
+#Converting character to factors
+loan_unique$Years.in.current.job<-as.factor(loan_unique$Years.in.current.job)
+summary(loan_unique$Years.in.current.job)
+```
+Column 8:- Home.Ownership 
+```{r Home.Ownership}
+class(loan_unique$Home.Ownership)
+# It's a character vector
+table(loan_unique$Home.Ownership)
+# Needs to be converted to factor and "HaveMortgage" needs to be converted to "Home Mortgage"
+loan_unique$Home.Ownership<-str_replace_all(loan_unique$Home.Ownership, "HaveMortgage", "Home Mortgage")
+loan_unique$Home.Ownership<-as.factor(loan_unique$Home.Ownership)
+summary(loan_unique$Home.Ownership)
+```
+Column 9:- Annual.Income 
+```{r Annual.Income}
+class(loan_unique$Annual.Income)
+# It's a numeric vector
+summary(loan_unique$Annual.Income)
+qplot(loan_unique$Annual.Income)
+quantile(loan_unique$Annual.Income,probs = seq(0,1,0.05),na.rm=TRUE)
+# Outliers are in the top 5 % data only
+outlier<-quantile(loan_unique$Annual.Income,probs = seq(0.95,1,0.01),na.rm=TRUE)
+# Capping any values greater than 99% to 99th value
+loan_unique$Annual.Income[loan_unique$Annual.Income>outlier[5]]<-outlier[5]
+summary(loan_unique$Annual.Income)
+qplot(loan_unique$Annual.Income)
+```
+Column 10:- Purpose
+```{r Purpose}
+class(loan_unique$Purpose)
+# It's a character vector
+table(loan_unique$Purpose)
+# Needs to be converted to a factor, and "other" and "Other" has to be merged
+loan_unique$Purpose<-str_replace_all(loan_unique$Purpose,"other","Other")
+table(loan_unique$Purpose)
+loan_unique$Purpose<-as.factor(loan_unique$Purpose)
+summary(loan_unique$Purpose)
+```
+Column 11:- Monthly.Debt
+```{r Monthly.Debt}
+class(loan_unique$Monthly.Debt)
+# It's a character vector, but needs to be converted to numeric
+
+# It has $ sign and "," which needs to be replaced
+# Replacing "$" sign with ""
+loan_unique$Monthly.Debt<- str_replace_all(loan_unique$Monthly.Debt, fixed("$"), "")
+#Replacing "," with ""
+loan_unique$Monthly.Debt<- str_replace_all(loan_unique$Monthly.Debt, fixed(","), "")
+# Converting to numeric
+loan_unique$Monthly.Debt<-as.numeric(loan_unique$Monthly.Debt)
+summary(loan_unique$Monthly.Debt)
+qplot(loan_unique$Monthly.Debt)
+# It has outliers, checking the quantiles
+quantile(loan_unique$Monthly.Debt,probs = seq(0,1,0.05))
+# Outliers are from 95 to 100. Let's dig deeper.
+quantile(loan_unique$Monthly.Debt,probs = seq(0.95,1,0.01))
+#Only 100th percentile is an outlier. We will replace it with 99th percentile
+outlier<-quantile(loan_unique$Monthly.Debt,probs =c(0.99,1))
+loan_unique$Monthly.Debt[loan_unique$Monthly.Debt>outlier[1]]<-outlier[1]
+qplot(loan_unique$Monthly.Debt)
+```
+Column 12:- Years.of.Credit.History
+```{r Years.of.Credit.History}
+class(loan_unique$Years.of.Credit.History)
+# It is a numeric vector
+summary(loan_unique$Years.of.Credit.History)
+qplot(loan_unique$Years.of.Credit.History)
+# Looks Clean, no need of any processing
+```
+Column 13:- Months.since.last.delinquent
+```{r Months.since.last.delinquent}
+class(loan_unique$Months.since.last.delinquent)
+# It is a numeric vector
+summary(loan_unique$Months.since.last.delinquent)
+# Has lots of NA's. 
+# Checking for outliers
+qplot(loan_unique$Months.since.last.delinquent)
+# We will treat NA's later, if required.
+```
+Column 14:- Number.of.Open.Accounts
+```{r Number.of.Open.Accounts}
+class(loan_unique$Number.of.Open.Accounts)
+# It is a numeric vector
+summary(loan_unique$Number.of.Open.Accounts)
+# Checking for outliers
+qplot(loan_unique$Number.of.Open.Accounts)
+quantile(loan_unique$Number.of.Open.Accounts,probs = seq(0.95,1,0.01))
+# Only the 100th percentile is an outlier,replacing it with 99 i
+outlier<-quantile(loan_unique$Number.of.Open.Accounts,probs =c(0.99,1))
+loan_unique$Number.of.Open.Accounts[loan_unique$Number.of.Open.Accounts>outlier[1]]<-outlier[1]
+qplot(loan_unique$Number.of.Open.Accounts)
+```
+Column 15:- Number.of.Credit.Problems
+```{r Number.of.Credit.Problems}
+class(loan_unique$Number.of.Credit.Problems)
+# It is a numeric vector
+summary(loan_unique$Number.of.Credit.Problems)
+# Checking for outliers
+qplot(loan_unique$Number.of.Credit.Problems)
+quantile(loan_unique$Number.of.Credit.Problems,probs = seq(0,1,0.05))
+table(loan_unique$Number.of.Credit.Problems)
+#Cleaning not requried
+```
+Column 16:- Current.Credit.Balance
+```{r Current.Credit.Balance}
+class(loan_unique$Current.Credit.Balance)
+summary(loan_unique$Current.Credit.Balance)
+# It is a numeric vector
+#Checking for outliers
+qplot(loan_unique$Current.Credit.Balance)
+quantile(loan_unique$Current.Credit.Balance,probs = seq(0,1,0.05))
+# Capping as per IQR 
+outlier<-boxplot.stats(loan_unique$Current.Credit.Balance)
+summary(outlier$out)
+quantile(loan_unique$Current.Credit.Balance,probs = seq(0.95,1,0.01))
+loan_unique$Current.Credit.Balance[loan_unique$Current.Credit.Balance>min(outlier$out)]<-min(outlier$out)
+qplot(loan_unique$Current.Credit.Balance)
+```
+Column 17:- Current.Credit.Balance
+```{r Current.Credit.Balance}
+class(loan_unique$Maximum.Open.Credit)
+head(loan_unique$Maximum.Open.Credit)
+# It's a character vector,but has numeric values.
+# It has some junk values such as "#VALUE!", which needs to be replaced with NA
+loan_unique$Maximum.Open.Credit<- str_replace_all(loan_unique$Maximum.Open.Credit, fixed("#VALUE!"),NA)
+#  Converting to numeric data
+loan_unique$Maximum.Open.Credit<-as.numeric(loan_unique$Maximum.Open.Credit)
+summary(loan_unique$Maximum.Open.Credit)
+# It also has outliers
+qplot(loan_unique$Maximum.Open.Credit)
+#Checking the quantiles
+quantile(loan_unique$Maximum.Open.Credit,probs = seq(0,1,0.05),na.rm = T)
+quantile(loan_unique$Maximum.Open.Credit,probs = seq(0.95,1,0.01),na.rm = T)
+quantile(loan_unique$Maximum.Open.Credit,probs = seq(0.99,1,0.001),na.rm = T)
+# Capping beyond 150000
+loan_unique$Maximum.Open.Credit[loan_unique$Maximum.Open.Credit>150000]<-150000
+qplot(loan_unique$Maximum.Open.Credit)
+```
+Column 18:- Bankruptcies
+```{r Bankruptcies}
+class(loan_unique$Bankruptcies)
+# It's a numeric vector
+summary(loan_unique$Bankruptcies)
+table(loan_unique$Bankruptcies)
+# Cleaning not required
+```
+Column 19:- Tax.Liens
+```{r Tax.Liens}
+class(loan_unique$Tax.Liens)
+# It's a numeric vector
+summary(loan_unique$Tax.Liens)
+table(loan_unique$Tax.Liens)
+# Cleaning not required
+```
+#### Feature Selection 
+Breaking the loan_unique data frames into numeric and factor and dropping Loan.ID and Customer.ID
+```{r}
+numeric<-sapply(loan_unique,function(x){class(x)=="integer"})
+loan_numeric<-loan_unique[,numeric]
+str(loan_numeric)
+loan_numeric$Months.since.last.delinquent<-NULL
+library(mice)
+impute<-mice(loan_numeric)
+loan_com_numeric<-complete(impute)
+str(loan_com_numeric)
+stripplot(impute)
