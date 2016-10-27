@@ -259,3 +259,7 @@ impute<-mice(loan_numeric)
 loan_com_numeric<-complete(impute)
 str(loan_com_numeric)
 stripplot(impute)
+
+```
+
+Edited
