@@ -247,3 +247,15 @@ summary(loan_unique$Tax.Liens)
 table(loan_unique$Tax.Liens)
 # Cleaning not required
 ```
+#### Feature Selection 
+Breaking the loan_unique data frames into numeric and factor and dropping Loan.ID and Customer.ID
+```{r}
+numeric<-sapply(loan_unique,function(x){class(x)=="integer"})
+loan_numeric<-loan_unique[,numeric]
+str(loan_numeric)
+loan_numeric$Months.since.last.delinquent<-NULL
+library(mice)
+impute<-mice(loan_numeric)
+loan_com_numeric<-complete(impute)
+str(loan_com_numeric)
+stripplot(impute)
