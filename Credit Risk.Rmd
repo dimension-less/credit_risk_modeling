@@ -74,11 +74,11 @@ class(loan_unique$Credit.Score)
 # It is a numeric vector.
 summary(loan_unique$Credit.Score)
 # It has NA's and the maximum value is 7510. But it should be between 0-800.
-qplot(loan_unique$Credit.Score)
+qplot(loan_unique$Credit.Score,xlim=c(0,1000))
 # We will replace all the values greater than 800 by NA's
 loan_unique$Credit.Score[loan_unique$Credit.Score>800]<-NA
 summary(loan_unique$Credit.Score)
-qplot(loan_unique$Credit.Score)
+qplot(log(loan_unique$Credit.Score),xlim = c(6,7))
 #Missing value treatment, replacing missing values by median
 loan_unique$Credit.Score[is.na(loan_unique$Credit.Score)==TRUE]<-median(loan_unique$Credit.Score,na.rm = T)
 ```
@@ -118,7 +118,7 @@ outlier<-quantile(loan_unique$Annual.Income,probs = seq(0.95,1,0.01),na.rm=TRUE)
 # Capping any values greater than 99% to 99th value
 loan_unique$Annual.Income[loan_unique$Annual.Income>outlier[5]]<-outlier[5]
 summary(loan_unique$Annual.Income)
-qplot(loan_unique$Annual.Income)
+qplot(log(loan_unique$Annual.Income))
 ```
 Column 10:- Purpose
 ```{r Purpose}
@@ -204,15 +204,12 @@ summary(loan_unique$Current.Credit.Balance)
 #Checking for outliers
 qplot(loan_unique$Current.Credit.Balance)
 quantile(loan_unique$Current.Credit.Balance,probs = seq(0,1,0.05))
-# Capping as per IQR 
-outlier<-boxplot.stats(loan_unique$Current.Credit.Balance)
-summary(outlier$out)
-quantile(loan_unique$Current.Credit.Balance,probs = seq(0.95,1,0.01))
-loan_unique$Current.Credit.Balance[loan_unique$Current.Credit.Balance>min(outlier$out)]<-min(outlier$out)
-qplot(loan_unique$Current.Credit.Balance)
+outlier<-quantile(loan_unique$Current.Credit.Balance,probs = seq(0.95,1,0.01))
+loan_unique$Current.Credit.Balance[loan_unique$Current.Credit.Balance>outlier[5]]<-outlier[5]
+qplot(sqrt(loan_unique$Current.Credit.Balance))
 ```
-Column 17:- Current.Credit.Balance
-```{r Current.Credit.Balance}
+Column 17:- Maximum.Open.Credit
+```{r Maximum.Open.Credit}
 class(loan_unique$Maximum.Open.Credit)
 head(loan_unique$Maximum.Open.Credit)
 # It's a character vector,but has numeric values.
@@ -229,37 +226,69 @@ quantile(loan_unique$Maximum.Open.Credit,probs = seq(0.95,1,0.01),na.rm = T)
 quantile(loan_unique$Maximum.Open.Credit,probs = seq(0.99,1,0.001),na.rm = T)
 # Capping beyond 150000
 loan_unique$Maximum.Open.Credit[loan_unique$Maximum.Open.Credit>150000]<-150000
-qplot(loan_unique$Maximum.Open.Credit)
+qplot(sqrt(loan_unique$Maximum.Open.Credit))
+# Replacing NA's by median
+loan_unique$Maximum.Open.Credit<-ifelse(is.na(loan_unique$Maximum.Open.Credit),21780,loan_unique$Maximum.Open.Credit)
 ```
 Column 18:- Bankruptcies
 ```{r Bankruptcies}
 class(loan_unique$Bankruptcies)
 # It's a numeric vector
 summary(loan_unique$Bankruptcies)
+# Replacing NA's with median
+loan_unique$Bankruptcies<-ifelse(is.na(loan_unique$Bankruptcies),0,loan_unique$Bankruptcies)
 table(loan_unique$Bankruptcies)
-# Cleaning not required
+
 ```
 Column 19:- Tax.Liens
 ```{r Tax.Liens}
 class(loan_unique$Tax.Liens)
 # It's a numeric vector
 summary(loan_unique$Tax.Liens)
+# Replacing NA's with median
+loan_unique$Tax.Liens<-ifelse(is.na(loan_unique$Tax.Liens),0,loan_unique$Tax.Liens)
+summary(loan_unique$Tax.Liens)
 table(loan_unique$Tax.Liens)
-# Cleaning not required
 ```
-#### Feature Selection 
-Breaking the loan_unique data frames into numeric and factor and dropping Loan.ID and Customer.ID
+
+#### Replacing NA's
+
 ```{r}
-numeric<-sapply(loan_unique,function(x){class(x)=="integer"})
-loan_numeric<-loan_unique[,numeric]
-str(loan_numeric)
-loan_numeric$Months.since.last.delinquent<-NULL
+# Counting number of NA's in each column
+sapply(loan_unique, function(x){sum(is.na(x))})
+# Removing the column Months.since.last.delinquent
+loan_unique$Months.since.last.delinquent<-NULL
+# Applying mice for NA's in Years.in.current.job  and Annual.Income 
 library(mice)
-impute<-mice(loan_numeric)
+simple<-loan_unique[,4:18]
+impute<-mice(simple)
 loan_com_numeric<-complete(impute)
 str(loan_com_numeric)
 stripplot(impute)
 
 ```
-
-Edited
+Feature Selection from factor data using Chi-Square
+```{r}
+str(loan_char)
+# Between Loan Status and Term
+chisq.test(loan_char$Loan.Status,loan_char$Term)
+table(loan_char$Loan.Status,loan_char$Term)
+cor(as.numeric(loan_char$Loan.Status),as.numeric(loan_char$Term),method = "spearman",use = "pairwise.complete.obs")
+chisq.test(loan_char$Loan.Status,loan_char$Term)
+```
+Feature Selection from numeric data using correlation matrix
+```{r}
+cor(loan_numeric$Bankruptcies,loan_numeric$Tax.Liens,method = "kendall",use = "pairwise.complete.obs")
+cor(as.numeric(loan_char$Loan.Status),loan_numeric$Bankruptcies,method = "kendall",use = "pairwise.complete.obs" )
+chisq.test(loan_char$Loan.Status,loan_numeric$Bankruptcies)
+chisq.test(loan_char$Loan.Status,loan_numeric$Tax.Liens)
+cor(as.numeric(loan_char$Loan.Status),loan_numeric$Tax.Liens,method = "kendall",use = "pairwise.complete.obs")
+table(loan_char$Loan.Status,loan_numeric$Tax.Liens)
+chisq.test(loan_char$Loan.Status,loan_char$Home.Ownership)
+table(loan_char$Loan.Status,loan_char$Home.Ownership)
+t.test(loan_numeric$Credit.Score~loan_char$Loan.Status)
+t.test(loan_numeric$Current.Loan.Amount~loan_char$Loan.Status)
+summary(aov(loan_numeric$Current.Loan.Amount~loan_char$Loan.Status))
+model<-lm(loan_numeric$Current.Loan.Amount~loan_char$Loan.Status)
+anova(model)
+```
