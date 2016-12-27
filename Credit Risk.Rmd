@@ -262,10 +262,10 @@ loan_unique$Months.since.last.delinquent<-NULL
 library(mice)
 simple<-loan_unique[,4:18]
 impute<-mice(simple)
-loan_com_numeric<-complete(impute)
-str(loan_com_numeric)
-stripplot(impute)
-
+loan_complete<-complete(impute)
+summary(loan_complete)
+#Adding loan status
+loan_complete<-cbind(loan_complete,Loan.Status=loan_unique$Loan.Status)
 ```
 Feature Selection from factor data using Chi-Square
 ```{r}
@@ -291,4 +291,30 @@ t.test(loan_numeric$Current.Loan.Amount~loan_char$Loan.Status)
 summary(aov(loan_numeric$Current.Loan.Amount~loan_char$Loan.Status))
 model<-lm(loan_numeric$Current.Loan.Amount~loan_char$Loan.Status)
 anova(model)
+```
+### Splitting the data
+Now since the cleaning is completed let's split the data into `train` and `test` using `caTools` library
+```{r split}
+library(caTools)
+# Converting labels to 0 and 1 
+loan_complete$Loan.Status<-ifelse(loan_complete$Loan.Status=="Charged Off",1,0)
+spl<-sample.split(loan_complete$Loan.Status,SplitRatio = 0.7)
+train<-subset(loan_complete,spl==TRUE)
+test<-subset(loan_complete,spl==FALSE)
+```
+
+### Model Building
+Let's start with XGBoost
+```{r XGB}
+library(xgboost)
+library(Matrix)
+# Preparing sparse matrix
+sparse.train<-sparse.model.matrix(Loan.Status~.-1,data = train)
+sparse_mat<-as.matrix(sparse.train)
+dtrain<-xgb.DMatrix(data=sparse.train,label=train$Loan.Status)
+sparse.test<-sparse.model.matrix(Loan.Status~.-1,data=test)
+dtest<-xgb.DMatrix(data=sparse.test,label=test$Loan.Status)
+watchlist<-list(train=dtrain,test=dtest)
+params<-list(eta=0.01,max_depth=10,objective="binary:logistic")
+model_xgb<-xgb.train(params = params,nrounds=5000,data=dtrain,verbose=2,watchlist=watchlist)
 ```
