@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 You can download the data from [here](http://az754797.vo.msecnd.net/competition/lex/data/LoansTrainingSetV2.csv)
 ```{r Importing}
 # We will not read the strings as factors, instead we will convert them one by one if required
-loan_data<-read.csv("C://Users/himanshu arora/Documents/Data Science/Case Study/Microsoft Credit Risk Modeling/LoansTrainingSetV2.csv",stringsAsFactors = FALSE)
+loan_data<-read.csv("http://az754797.vo.msecnd.net/competition/lex/data/LoansTrainingSetV2.csv",stringsAsFactors = FALSE)
 ```
 #### Remove Duplicate Rows
 The Loan.ID is a unique identifier, so we will remove any duplicate values of that
@@ -74,13 +74,13 @@ class(loan_unique$Credit.Score)
 # It is a numeric vector.
 summary(loan_unique$Credit.Score)
 # It has NA's and the maximum value is 7510. But it should be between 0-800.
-qplot(loan_unique$Credit.Score,xlim=c(0,1000))
-# We will replace all the values greater than 800 by NA's
-loan_unique$Credit.Score[loan_unique$Credit.Score>800]<-NA
+qplot(loan_unique$Credit.Score)
+# Dividing any score more than 800 by 10
+loan_unique$Credit.Score<-ifelse(loan_unique$Credit.Score>800,loan_unique$Credit.Score/10,loan_unique$Credit.Score)
 summary(loan_unique$Credit.Score)
-qplot(log(loan_unique$Credit.Score),xlim = c(6,7))
+qplot(log(loan_unique$Credit.Score))
 #Missing value treatment, replacing missing values by median
-loan_unique$Credit.Score[is.na(loan_unique$Credit.Score)==TRUE]<-median(loan_unique$Credit.Score,na.rm = T)
+#loan_unique$Credit.Score[is.na(loan_unique$Credit.Score)==TRUE]<-median(loan_unique$Credit.Score,na.rm = T)
 ```
 Column 7:- Years.in.current.job
 ```{r Years.in.current.job}
@@ -90,7 +90,7 @@ table(loan_unique$Years.in.current.job)
 # Needs to be converted to factor and "n/a" needs to be replaced to NA.
 # Replacing "n/a"
 library(stringr)
-loan_unique$Years.in.current.job<-str_replace_all(loan_unique$Years.in.current.job,pattern = "n/a",NA)
+loan_unique$Years.in.current.job<-str_replace_all(loan_unique$Years.in.current.job,fixed("n/a"),NA)
 table(loan_unique$Years.in.current.job)
 #Converting character to factors
 loan_unique$Years.in.current.job<-as.factor(loan_unique$Years.in.current.job)
@@ -118,6 +118,8 @@ outlier<-quantile(loan_unique$Annual.Income,probs = seq(0.95,1,0.01),na.rm=TRUE)
 # Capping any values greater than 99% to 99th value
 loan_unique$Annual.Income[loan_unique$Annual.Income>outlier[5]]<-outlier[5]
 summary(loan_unique$Annual.Income)
+#Converting to log scale 
+loan_unique$Annual.Income<-log(loan_unique$Annual.Income)
 qplot(log(loan_unique$Annual.Income))
 ```
 Column 10:- Purpose
@@ -206,7 +208,10 @@ qplot(loan_unique$Current.Credit.Balance)
 quantile(loan_unique$Current.Credit.Balance,probs = seq(0,1,0.05))
 outlier<-quantile(loan_unique$Current.Credit.Balance,probs = seq(0.95,1,0.01))
 loan_unique$Current.Credit.Balance[loan_unique$Current.Credit.Balance>outlier[5]]<-outlier[5]
+
 qplot(sqrt(loan_unique$Current.Credit.Balance))
+# Taking sqrt to make it normal
+loan_unique$Current.Credit.Balance<-sqrt(loan_unique$Current.Credit.Balance)
 ```
 Column 17:- Maximum.Open.Credit
 ```{r Maximum.Open.Credit}
@@ -229,6 +234,8 @@ loan_unique$Maximum.Open.Credit[loan_unique$Maximum.Open.Credit>150000]<-150000
 qplot(sqrt(loan_unique$Maximum.Open.Credit))
 # Replacing NA's by median
 loan_unique$Maximum.Open.Credit<-ifelse(is.na(loan_unique$Maximum.Open.Credit),21780,loan_unique$Maximum.Open.Credit)
+# Taking sqrt to make it more normal 
+loan_unique$Maximum.Open.Credit<-sqrt(loan_unique$Maximum.Open.Credit)
 ```
 Column 18:- Bankruptcies
 ```{r Bankruptcies}
@@ -259,9 +266,10 @@ sapply(loan_unique, function(x){sum(is.na(x))})
 # Removing the column Months.since.last.delinquent
 loan_unique$Months.since.last.delinquent<-NULL
 # Applying mice for NA's in Years.in.current.job  and Annual.Income 
+sapply(loan_unique,summary)
 library(mice)
 simple<-loan_unique[,4:18]
-impute<-mice(simple)
+impute<-mice(simple,m=1)
 loan_complete<-complete(impute)
 summary(loan_complete)
 #Adding loan status
@@ -292,12 +300,16 @@ summary(aov(loan_numeric$Current.Loan.Amount~loan_char$Loan.Status))
 model<-lm(loan_numeric$Current.Loan.Amount~loan_char$Loan.Status)
 anova(model)
 ```
+###Feature Engineering
+```{r}
+# Converting labels to 0 and 1 
+loan_complete$Loan.Status<-ifelse(loan_complete$Loan.Status=="Charged Off",1,0)
+```
 ### Splitting the data
 Now since the cleaning is completed let's split the data into `train` and `test` using `caTools` library
 ```{r split}
 library(caTools)
-# Converting labels to 0 and 1 
-loan_complete$Loan.Status<-ifelse(loan_complete$Loan.Status=="Charged Off",1,0)
+set.seed(1)
 spl<-sample.split(loan_complete$Loan.Status,SplitRatio = 0.7)
 train<-subset(loan_complete,spl==TRUE)
 test<-subset(loan_complete,spl==FALSE)
@@ -310,11 +322,19 @@ library(xgboost)
 library(Matrix)
 # Preparing sparse matrix
 sparse.train<-sparse.model.matrix(Loan.Status~.-1,data = train)
-sparse_mat<-as.matrix(sparse.train)
 dtrain<-xgb.DMatrix(data=sparse.train,label=train$Loan.Status)
+#names(sparse.train)
 sparse.test<-sparse.model.matrix(Loan.Status~.-1,data=test)
 dtest<-xgb.DMatrix(data=sparse.test,label=test$Loan.Status)
-watchlist<-list(train=dtrain,test=dtest)
-params<-list(eta=0.01,max_depth=10,objective="binary:logistic")
-model_xgb<-xgb.train(params = params,nrounds=5000,data=dtrain,verbose=2,watchlist=watchlist)
+watchlist<-list(test=dtest,train=dtrain)
+params<-list(eta=0.01,max_depth=4,objective="binary:logistic")
+
+model_xgb<-xgb.train(params = params,nrounds=5000,data=dtrain,verbose=1,watchlist=watchlist)
+
+importabce<-xgb.importance(feature_names = colnames(sparse.train),model = model_xgb)
+summary(importabce)
+xgb.plot.importance(importabce)
+xgb.dump(model_xgb,fname = 'eta0.01nr1000d4')
+xgb.save(model_xgb,fname = 'eta0.01nr1000d4')
 ```
+### Making Prediction
