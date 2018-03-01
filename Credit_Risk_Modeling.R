@@ -38,5 +38,5 @@ sapply(loan_unique,summary)
 
 sapply(loan_unique, class)
 
-
+# Testing
 
